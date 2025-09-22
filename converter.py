@@ -4,8 +4,8 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
-import rarfile
 import zipfile
+import rarfile
 from PyPDF2 import PdfReader
 import fitz
 from PIL import Image
@@ -14,19 +14,20 @@ from lxml import etree
 
 
 def get_opf(container_path):
+    """Get OPF file"""
     try:
         tree = etree.parse(container_path)
         root = tree.getroot()
         rootfile = root.find(".//{*}rootfile")
         if rootfile is not None:
             return rootfile.attrib["full-path"]
-        else:
-            return None
+        return None
     except etree.ParseError:
         return None
 
 
 def parse_opf(opf_file):
+    """Parse OPF file"""
     tree = etree.parse(opf_file)
     root = tree.getroot()
 
@@ -69,7 +70,7 @@ def resolve_image(spine_list, temp_dir):
                         images.append(img_path)
         except etree.ParseError:
             # -- Unable to open the HTML file
-            logging.warning("Unable to open " + str(spine_path))
+            logging.warning("Unable to open %s",str(spine_path))
             continue
 
     return images
@@ -82,15 +83,21 @@ class Converter:
         self.input = input_file
         self.output = output_file
 
+    def set_output_file(self, output):
+        """Set Output file"""
+        self.output = output
+
+    def set_input_file(self, input_file):
+        """Set input file"""
+        self.input = input_file
+
 
 class EpubConverter(Converter):
     """Convert EPUB file to CBZ format"""
 
-    def __init__(self, input_file, output_file):
-        super().__init__(input_file, output_file)
-
     def convert(self):
-        logging.info("Converting file " + str(self.input))
+        """Convert input file to CBZ"""
+        logging.info("Converting file %s", str(self.input))
 
         # -- Create temporary directory
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -103,14 +110,15 @@ class EpubConverter(Converter):
 
             # -- Check MIME TYPE
             mimetype_path = temp_dir.joinpath("mimetype")
-            if not mimetype_path.exists() or mimetype_path.read_text().strip() != "application/epub+zip":
-                logging.error("EPUB " + str(self.input.name) + " is not a valid EPUB document")
+            if not mimetype_path.exists() or \
+                    mimetype_path.read_text(encoding="utf-8").strip() != "application/epub+zip":
+                logging.error("EPUB %s is not a valid EPUB document", str(self.input.name))
                 return
 
             # -- Check container file
             container_path = temp_dir.joinpath("META-INF/container.xml")
             if not container_path.exists():
-                logging.error("Missing 'META-INF/container.xml' file in " + str(self.input.name))
+                logging.error("Missing 'META-INF/container.xml' file in %s", str(self.input.name))
                 return
 
             opf_path = get_opf(container_path)
@@ -120,7 +128,7 @@ class EpubConverter(Converter):
 
             opf_path = temp_dir.joinpath(opf_path)
             if not opf_path.exists():
-                logging.error("OPF file " + str(opf_path) + " cannot be found")
+                logging.error("OPF file %s cannot be found", str(opf_path))
                 return
 
             manifest, spine = parse_opf(opf_path)
@@ -146,11 +154,9 @@ class EpubConverter(Converter):
 class CbrConverter(Converter):
     """Convert CBR file to CBZ format"""
 
-    def __init__(self, input_file, output_file):
-        super().__init__(input_file, output_file)
-
     def convert(self):
-        logging.info("Converting file " + str(self.input))
+        """Convert input file to CBZ"""
+        logging.info("Converting file %s",str(self.input))
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
             with rarfile.RarFile(self.input) as rar_file:
@@ -173,14 +179,27 @@ class CbrConverter(Converter):
 class PdfConverter(Converter):
     """Convert PDF file to CBZ format"""
 
-    def __init__(self, input_file, output_file, dpi, format_file, quality):
+    def __init__(self, input_file, output_file):
         super().__init__(input_file, output_file)
+        self.dpi = 72
+        self.format = "png"
+        self.quality = 85
+
+    def set_dpi(self, dpi):
+        """Set DPI value"""
         self.dpi = dpi
-        self.format = format_file
+
+    def set_format(self, file_format):
+        """Set file format"""
+        self.format = file_format
+
+    def set_quality(self, quality):
+        """Set JPEG quality"""
         self.quality = quality
 
     def analyze(self):
-        logging.info("Analysing file " + str(self.input))
+        """Analyze PDF file to determine MIN, MAX and AVERAGE DPI"""
+        logging.info("Analysing file %s", str(self.input))
         pdf = PdfReader(str(self.input))
         # -- Get pages width as list with List Comprehension
         page_widths = [float(p.mediabox.width) for p in pdf.pages]
@@ -238,17 +257,15 @@ class PdfConverter(Converter):
                     img.save(buffer, format="JPEG", quality=self.quality)
                     data = buffer.getvalue()
 
-                output_file = f"{self.input.stem}_{str(i).zfill(padding_width)}.{ext}"
-
-                data_img.update({output_file: data})
+                data_img.update({f"{self.input.stem}_{str(i).zfill(padding_width)}.{ext}": data})
                 progress.update(1)
 
         progress.close()
         return data_img
 
     def convert(self):
-        input_str = str(self.input)
-        logging.info("Converting file " + str(self.input))
+        """Convert PDF to CBZ"""
+        logging.info("Converting file %s", str(self.input))
 
         # -- Get DPI
         if not self.dpi:
@@ -265,7 +282,7 @@ class PdfConverter(Converter):
             # -- Export to zip file
             with zipfile.ZipFile(self.output, "w") as zip_fid:
                 logging.info("Exporting to CBZ container")
-                for img_name in data_img:
-                    zip_fid.writestr(img_name, data_img[img_name])
+                for img_name, img_data in data_img.items():
+                    zip_fid.writestr(img_name, img_data)
 
-        logging.info("CBZ created: " + str(self.output))
+        logging.info("CBZ created: %s", str(self.output))

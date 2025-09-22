@@ -72,17 +72,20 @@ def init_logging(logfile_path):
         logger.addHandler(file_logger)
 
 
-def convert_pdf_to_cbz(input_path, output_path, dpi, img_format, quality, flag_analyze):
+def convert_pdf_to_cbz(input_path, args):
     """Convert PDF document to CBZ format"""
-    if output_path is None:
-        output = input_path.with_suffix(".cbz")
+    if args.output:
+        output = args.output
     else:
-        output = output_path
+        output = input_path.with_suffix(".cbz")
 
     # -- Create converter
-    converter = PdfConverter(input_path, output, dpi, img_format, quality)
+    converter = PdfConverter(input_path, output)
+    converter.set_dpi(args.dpi)
+    converter.set_format(args.format)
+    converter.set_quality(args.quality)
 
-    if flag_analyze:
+    if args.analyze:
         converter.analyze()
     else:
         converter.convert()
@@ -117,8 +120,7 @@ def process_path(args):
     for item in args.path.glob("*"):
         if item.is_file():
             if item.suffix.lower() == ".pdf":
-                convert_pdf_to_cbz(item, args.output, args.dpi, args.format, args.quality,
-                                   args.analyze)
+                convert_pdf_to_cbz(item, args)
             elif item.suffix.lower() == ".cbr":
                 convert_cbr_to_cbz(item, args.output)
             elif item.suffix.lower() == ".epub":
@@ -139,21 +141,15 @@ def main():
         sys.exit(-1)
     if args.path.is_file():
         if args.path.suffix.lower() == ".pdf":
-            convert_pdf_to_cbz(args.path, args.output, args.dpi, args.format, args.quality,
-                               args.analyze)
-            return
+            convert_pdf_to_cbz(args.path, args)
         elif args.path.suffix.lower() == ".cbr":
             convert_cbr_to_cbz(args.path, args.output)
-            return
         elif args.path.suffix.lower() == ".epub":
             convert_epub_to_cbz(args.path, args.output)
-            return
         else:
             logging.warning("File format is not supported")
-            return
     elif args.path.is_dir():
         process_path(args)
-        return
     else:
         logging.error("Input does not exist.")
         sys.exit(-1)
