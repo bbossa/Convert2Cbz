@@ -16,6 +16,7 @@ jobs:
           convert2cbr.py
           converter.py
         requirements-path: requirements.txt
+        pylintrc-path: .pylintrc
         python-version: 3.12
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
