@@ -1,6 +1,6 @@
 # Convert2Cbz
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-![pylint]()
+![pylint](https://img.shields.io/badge/PyLint-9.81-yellow?logo=python&logoColor=white)
 [![python](https://img.shields.io/badge/Python-3.12-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
