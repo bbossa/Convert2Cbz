@@ -136,9 +136,15 @@ def main():
     logging.info("Start program")
 
     # -- Check input
+
     if args.path is None:
         logging.error("No input file or directory provided. See --help for usage.")
         sys.exit(-1)
+
+    # -- Check path error when using solo directory to scan
+    if str(args.path).endswith('"') or str(args.path).endswith("'"):
+        args.path = Path(str(args.path).replace('"', "").replace("'",""))
+
     if args.path.is_file():
         if args.path.suffix.lower() == ".pdf":
             convert_pdf_to_cbz(args.path, args)
@@ -152,7 +158,6 @@ def main():
         process_path(args)
     else:
         logging.error("Input does not exist.")
-        sys.exit(-1)
 
 
 # -- Start main program

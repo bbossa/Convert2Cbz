@@ -70,7 +70,7 @@ def resolve_image(spine_list, temp_dir):
                         images.append(img_path)
         except etree.ParseError:
             # -- Unable to open the HTML file
-            logging.warning("Unable to open %s",str(spine_path))
+            logging.warning("Unable to open %s", str(spine_path))
             continue
 
     return images
@@ -90,6 +90,24 @@ class Converter:
     def set_input_file(self, input_file):
         """Set input file"""
         self.input = input_file
+
+    def is_valid_rar(self):
+        """Check if the input file is a valid rar archive"""
+        try:
+            with rarfile.RarFile(self.input, "r") as rar_file:
+                return rar_file.testrar() is None
+
+        except (rarfile.BadRarFile, rarfile.NotRarFile):
+            return False
+
+    def is_valid_zip(self):
+        """Check if the input is a valid zip archive"""
+        try:
+            with zipfile.ZipFile(self.input, "r") as zip_file:
+                return zip_file.testzip() is None
+
+        except zipfile.BadZipfile:
+            return False
 
 
 class EpubConverter(Converter):
@@ -156,10 +174,22 @@ class CbrConverter(Converter):
 
     def convert(self):
         """Convert input file to CBZ"""
-        logging.info("Converting file %s",str(self.input))
+        logging.info("Converting file %s", str(self.input))
+
+        # -- Check first if the CBR is valid
+        if not self.is_valid_rar():
+            if self.is_valid_zip():
+                # -- CBR archive is in fact a CBZ archive --> rename
+                self.input.rename(self.output)
+                return
+
+            logging.warning("Input file %s is not a valid RAR archive "
+                            "nor a valid ZIP archive", self.input)
+            return
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
-            with rarfile.RarFile(self.input) as rar_file:
+            with rarfile.RarFile(self.input, "r") as rar_file:
                 # -- Extract CBR as rarfile into temp directory
                 rar_file.extractall(temp_dir)
 
