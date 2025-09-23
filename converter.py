@@ -1,6 +1,8 @@
 """Class converter"""
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import io
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -82,6 +84,7 @@ class Converter:
     def __init__(self, input_file, output_file):
         self.input = input_file
         self.output = output_file
+        self.threads = os.cpu_count()
 
     def set_output_file(self, output):
         """Set Output file"""
@@ -90,24 +93,6 @@ class Converter:
     def set_input_file(self, input_file):
         """Set input file"""
         self.input = input_file
-
-    def is_valid_rar(self):
-        """Check if the input file is a valid rar archive"""
-        try:
-            with rarfile.RarFile(self.input, "r") as rar_file:
-                return rar_file.testrar() is None
-
-        except (rarfile.BadRarFile, rarfile.NotRarFile):
-            return False
-
-    def is_valid_zip(self):
-        """Check if the input is a valid zip archive"""
-        try:
-            with zipfile.ZipFile(self.input, "r") as zip_file:
-                return zip_file.testzip() is None
-
-        except zipfile.BadZipfile:
-            return False
 
 
 class EpubConverter(Converter):
@@ -175,21 +160,9 @@ class CbrConverter(Converter):
     def convert(self):
         """Convert input file to CBZ"""
         logging.info("Converting file %s", str(self.input))
-
-        # -- Check first if the CBR is valid
-        if not self.is_valid_rar():
-            if self.is_valid_zip():
-                # -- CBR archive is in fact a CBZ archive --> rename
-                self.input.rename(self.output)
-                return
-
-            logging.warning("Input file %s is not a valid RAR archive "
-                            "nor a valid ZIP archive", self.input)
-            return
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
-            with rarfile.RarFile(self.input, "r") as rar_file:
+            with rarfile.RarFile(self.input) as rar_file:
                 # -- Extract CBR as rarfile into temp directory
                 rar_file.extractall(temp_dir)
 
@@ -214,6 +187,7 @@ class PdfConverter(Converter):
         self.dpi = 72
         self.format = "png"
         self.quality = 85
+        self.padding = 1
 
     def set_dpi(self, dpi):
         """Set DPI value"""
@@ -252,28 +226,20 @@ class PdfConverter(Converter):
 
         self.dpi = dpi
 
-    def _process_pdf(self):
-        # -- Set output dict
-        data_img = {}
-        with fitz.open(str(self.input)) as pdf:
-            # -- Get number of page
-            num_pages = len(pdf)
-            padding_width = len(str(num_pages))
-            # -- Set output file extension
-            if self.format == "png":
-                ext = "png"
-            else:
-                ext = "jpg"
+    def process_page(self, page_number):
+        """Page processing"""
+        # -- Set output file extension
+        if self.format == "png":
+            ext = "png"
+        else:
+            ext = "jpg"
 
-            # -- Create progress bar with TQDM
-            progress = tqdm(total=num_pages, desc=f"Rendering {self.input.name}", unit="pages",
-                            file=sys.stdout)
-
-            for i in range(1, num_pages + 1):
-                # -- Get page
-                page = pdf.load_page(i - 1)
+        # -- Get document
+        try:
+            with fitz.open(str(self.input)) as pdf:
+                page = pdf.load_page(page_number - 1)
                 scale = self.dpi / 72
-                # - Create maxtrix scaling
+                # - Create matrix scaling
                 mat = fitz.Matrix(scale, scale)
                 pix = page.get_pixmap(matrix=mat, alpha=False)
                 # -- generate image
@@ -287,11 +253,10 @@ class PdfConverter(Converter):
                     img.save(buffer, format="JPEG", quality=self.quality)
                     data = buffer.getvalue()
 
-                data_img.update({f"{self.input.stem}_{str(i).zfill(padding_width)}.{ext}": data})
-                progress.update(1)
-
-        progress.close()
-        return data_img
+                return f"{self.input.stem}_{str(page_number).zfill(self.padding)}.{ext}", data
+        except Exception as e:  # pylint: disable=broad-except
+            logging.error("Unable to render page %s: %s", str(page_number), e)
+        raise ExportImageError
 
     def convert(self):
         """Convert PDF to CBZ"""
@@ -301,18 +266,34 @@ class PdfConverter(Converter):
         if not self.dpi:
             self._compute_dpi()
 
-        # -- Start conversion
+        # -- Open PDF
+        with fitz.open(str(self.input)) as pdf:
+            # -- Get number of page
+            num_pages = len(pdf)
+            self.padding = len(str(num_pages))
 
-        # -- Process pages
-        data_img = self._process_pdf()
+            # -- Create progress bar with TQDM
+            progress = tqdm(total=num_pages, desc="Convert", unit="pages", file=sys.stdout)
 
-        if len(data_img) == 0:
-            logging.error("No image processed during conversion")
-        else:
-            # -- Export to zip file
+            # -- Create the CBZ archive
             with zipfile.ZipFile(self.output, "w") as zip_fid:
-                logging.info("Exporting to CBZ container")
-                for img_name, img_data in data_img.items():
-                    zip_fid.writestr(img_name, img_data)
+                with ProcessPoolExecutor(max_workers=self.threads) as executor:
+                    # -- Create threads execution
+                    future_pages = {executor.submit(self.process_page, i + 1): i + 1 for i in
+                                    range(0, num_pages)}
 
-        logging.info("CBZ created: %s", str(self.output))
+                    # -- Wait to each thread to stop and try to get execution
+                    for future in as_completed(future_pages):
+                        page_index = future_pages[future]
+                        try:
+                            img_name, img_data = future.result()
+                            zip_fid.writestr(img_name, img_data)
+                            progress.update(1)
+                        except ExportImageError as e:
+                            logging.error("Failed to convert page %s: %s", str(page_index), e)
+                progress.close()
+                logging.info("CBZ created: %s", str(self.output))
+
+
+class ExportImageError(Exception):
+    """Custom execution"""
