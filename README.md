@@ -9,6 +9,8 @@ Convert PDF, CBR and EPUB comics / manga / BD to CBZ format.
 ## Description
 The tool can take a PDF, a CBR or an EPUB file and convert it as a CBZ file.
 
+This is mainly a tool based on my usage ans my needs. It is based on different source mainly to continue to learn Python and learn how these file format works
+
 ## Usages
 <pre>
 usage: convert2cbz [-h] [-o OUTPUT] [-d DPI] [-q QUALITY] [-f {jpeg,png}] [-l LOGFILE] [-a] path
