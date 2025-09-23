@@ -94,6 +94,24 @@ class Converter:
         """Set input file"""
         self.input = input_file
 
+    def is_valid_rar(self):
+        """Check if the input file is a valid rar archive"""
+        try:
+            with rarfile.RarFile(self.input, "r") as rar_file:
+                return rar_file.testrar() is None
+
+        except (rarfile.BadRarFile, rarfile.NotRarFile):
+            return False
+
+    def is_valid_zip(self):
+        """Check if the input is a valid zip archive"""
+        try:
+            with zipfile.ZipFile(self.input, "r") as zip_file:
+                return zip_file.testzip() is None
+
+        except zipfile.BadZipfile:
+            return False
+
 
 class EpubConverter(Converter):
     """Convert EPUB file to CBZ format"""

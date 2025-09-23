@@ -1,8 +1,12 @@
 """THis script convert compatibles files to CBZ format"""
 import argparse
 import logging
+import os
+import shutil
 import sys
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
 from converter import PdfConverter, CbrConverter, EpubConverter
 
 
@@ -100,7 +104,15 @@ def convert_cbr_to_cbz(input_path, output_path):
 
     # -- Create converter
     converter = CbrConverter(input_path, output)
-    converter.convert()
+    # -- Check first if the input file is a valid rar file
+    if converter.is_valid_rar():
+        converter.convert()
+    else:
+        if converter.is_valid_zip():
+            # -- Just need to copy the input file
+            shutil.copy(input_path, output)
+        else:
+            logging.warning("File %s is not valid RAR archive nor a valid ZIP archive")
 
 
 def convert_epub_to_cbz(input_path, output_path):
@@ -117,14 +129,51 @@ def convert_epub_to_cbz(input_path, output_path):
 
 def process_path(args):
     """Scan a directory for file processing"""
+    list_pdf = []
+    list_cbr = []
+    list_epub = []
     for item in args.path.glob("*"):
         if item.is_file():
             if item.suffix.lower() == ".pdf":
-                convert_pdf_to_cbz(item, args)
+                list_pdf.append(item)
             elif item.suffix.lower() == ".cbr":
-                convert_cbr_to_cbz(item, args.output)
+                list_cbr.append(item)
             elif item.suffix.lower() == ".epub":
-                convert_epub_to_cbz(item, args.output)
+                list_epub.append(item)
+
+    # -- Run PDF export
+    for item in list_pdf:
+        convert_pdf_to_cbz(item, args)
+
+    # -- Run CBR export
+    if len(list_cbr) > 0:
+        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+            # -- Create threads execution
+            future_cbz = [executor.submit(convert_cbr_to_cbz, item, args.output) for item in list_cbr]
+            progress = tqdm(total=len(list_cbr), desc="Convert", unit="files", file=sys.stdout)
+            # -- Wait to each thread to stop and try to get execution
+            for future in as_completed(future_cbz):
+                try:
+                    future.result()
+                    progress.update(1)
+                except Exception as e:  # pylint: disable=broad-except
+                    logging.error("Error during file conversion: %s", e)
+            progress.close()
+
+    # -- Run EPUB export
+    if len(list_epub) > 0:
+        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+            # -- Create threads execution
+            future_epub = [executor.submit(convert_cbr_to_cbz, item, args.output) for item in list_epub]
+            progress = tqdm(total=len(list_epub), desc="Convert", unit="files", file=sys.stdout)
+            # -- Wait to each thread to stop and try to get execution
+            for future in as_completed(future_epub):
+                try:
+                    future.result()
+                    progress.update(1)
+                except Exception as e:  # pylint: disable=broad-except
+                    logging.error("Error during file conversion: %s", e)
+            progress.close()
 
 
 def main():
@@ -142,9 +191,15 @@ def main():
         sys.exit(-1)
 
     # -- Check path error when using solo directory to scan
+    print(args.path)
     if str(args.path).endswith('"') or str(args.path).endswith("'"):
-        args.path = Path(str(args.path).replace('"', "").replace("'",""))
+        #args.path = Path(str(args.path).replace('"', "").replace("'", ""))
+        if str(args.path).endswith('"'):
+            args.path = Path(str(args.path).strip('"'))
+        elif str(args.path).endswith("'"):
+            args.path = Path(str(args.path).strip("'"))
 
+    print(args.path)
     if args.path.is_file():
         if args.path.suffix.lower() == ".pdf":
             convert_pdf_to_cbz(args.path, args)
