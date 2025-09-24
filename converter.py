@@ -165,11 +165,15 @@ class EpubConverter(Converter):
             if len(images) == 0:
                 logging.error("Archive contains not file")
             else:
-                with zipfile.ZipFile(self.output, "w") as zip_fid:
-                    logging.info("Exporting to CBZ container")
-                    for file in images:
-                        cbz_name = file.relative_to(temp_dir)
-                        zip_fid.write(file, cbz_name)
+                try:
+                    with zipfile.ZipFile(self.output, "w") as zip_fid:
+                        logging.info("Exporting to CBZ container")
+                        for file in images:
+                            cbz_name = file.relative_to(temp_dir)
+                            zip_fid.write(file, cbz_name)
+                except PermissionError:
+                    logging.error("Permission denied - unable to create output file")
+                    sys.exit(-2)
 
 
 class CbrConverter(Converter):
@@ -190,11 +194,15 @@ class CbrConverter(Converter):
             if len(files) == 0:
                 logging.error("Archive contains not file")
             else:
-                with zipfile.ZipFile(self.output, "w") as zip_fid:
-                    logging.info("Exporting to CBZ container")
-                    for file in files:
-                        cbz_name = file.relative_to(temp_dir)
-                        zip_fid.write(file, cbz_name)
+                try:
+                    with zipfile.ZipFile(self.output, "w") as zip_fid:
+                        logging.info("Exporting to CBZ container")
+                        for file in files:
+                            cbz_name = file.relative_to(temp_dir)
+                            zip_fid.write(file, cbz_name)
+                except PermissionError:
+                    logging.error("Permission denied - unable to create output file")
+                    sys.exit(-2)
 
 
 class PdfConverter(Converter):
@@ -294,23 +302,27 @@ class PdfConverter(Converter):
             progress = tqdm(total=num_pages, desc="Convert", unit="pages", file=sys.stdout)
 
             # -- Create the CBZ archive
-            with zipfile.ZipFile(self.output, "w") as zip_fid:
-                with ProcessPoolExecutor(max_workers=self.threads) as executor:
-                    # -- Create threads execution
-                    future_pages = {executor.submit(self.process_page, i + 1): i + 1 for i in
-                                    range(0, num_pages)}
+            try:
+                with zipfile.ZipFile(self.output, "w") as zip_fid:
+                    with ProcessPoolExecutor(max_workers=self.threads) as executor:
+                        # -- Create threads execution
+                        future_pages = {executor.submit(self.process_page, i + 1): i + 1 for i in
+                                        range(0, num_pages)}
 
-                    # -- Wait to each thread to stop and try to get execution
-                    for future in as_completed(future_pages):
-                        page_index = future_pages[future]
-                        try:
-                            img_name, img_data = future.result()
-                            zip_fid.writestr(img_name, img_data)
-                            progress.update(1)
-                        except ExportImageError as e:
-                            logging.error("Failed to convert page %s: %s", str(page_index), e)
+                        # -- Wait to each thread to stop and try to get execution
+                        for future in as_completed(future_pages):
+                            page_index = future_pages[future]
+                            try:
+                                img_name, img_data = future.result()
+                                zip_fid.writestr(img_name, img_data)
+                                progress.update(1)
+                            except ExportImageError as e:
+                                logging.error("Failed to convert page %s: %s", str(page_index), e)
                 progress.close()
                 logging.info("CBZ created: %s", str(self.output))
+            except PermissionError:
+                logging.error("Permission denied - unable to create output file")
+                sys.exit(-2)
 
 
 class ExportImageError(Exception):

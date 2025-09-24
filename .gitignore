@@ -209,3 +209,4 @@ __marimo__/
 # Specific to project
 .idea/
 *.cbz
+Out/
