@@ -13,7 +13,7 @@ jobs:
     - uses: Silleellie/pylint-github-action@v2.1
       with:
         lint-path: |
-          convert2cbr.py
+          convert2cbz.py
           converter.py
         requirements-path: requirements.txt
         pylintrc-path: .pylintrc
