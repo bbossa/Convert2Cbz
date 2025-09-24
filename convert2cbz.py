@@ -2,6 +2,7 @@
 import argparse
 import errno
 import logging
+import multiprocessing
 import os
 import shutil
 import sys
@@ -315,5 +316,6 @@ def main() -> None:
 
 # -- Start main program
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
     sys.exit(0)
